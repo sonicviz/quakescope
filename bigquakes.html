@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang='en'>
+
+<head>
+    <meta charset='utf-8'>
+    <!-- <link rel="stylesheet" href="filter.css" /> -->
+    <title>Major Earthquakes Data Explorer</title>
+    <script src="topojson.js"></script>
+    <script src="queue.js"></script>
+    <script src="http://d3js.org/d3.v3.min.js"></script>
+    <script src='crossfilter.js' type='text/javascript'></script>
+    <script src='dc.js' type='text/javascript'></script>
+    <script src='jquery-1.9.1.min.js' type='text/javascript'></script>
+    <script src='bootstrap.min.js' type='text/javascript'></script>
+
+    <link href='bootstrap.min.css' rel='stylesheet' type='text/css'>
+    <link href='dc.css' rel='stylesheet' type='text/css'>
+    <script src='colorbrewer.js' type='text/javascript'></script>
+    <style type="text/css"></style>
+
+    <style>
+        h4 span {
+            font-size: 14px;
+            font-weight: normal;
+        }
+
+        h2 {
+            float: right;
+        }
+
+        h2 span {
+            font-size: 14px;
+            font-weight: normal;
+        }
+
+        path {
+            stroke: black;
+            stroke-width: 0.25px;
+            fill: #fafafa;
+        }
+
+        div.tooltip {
+            position: absolute;
+            width: 200px;
+            padding: 8px;
+            font: 12px sans-serif;
+            background: #fff;
+            border: solid 1px #aaa;
+            border-radius: 8px;
+            pointer-events: none;
+        }
+
+        .boldDetail {
+            font-weight: bold;
+        }
+
+        .normalDetail {
+            font-weight: normal;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class='container' style='font: 12px sans-serif;'>
+        <div class="dc-data-count" style="float: left;">
+            <h2>Major Earthquakes Data Explorer
+          <br>
+          <span>
+            <span class="filter-count"></span>
+             selected out of
+            <span class="total-count"></span>
+             records |
+            <a href="javascript:dc.filterAll(); dc.renderAll();">Reset All</a>
+          </span><br>
+          <span id="instructions">
+            Mouseover and click map for details. Click and drag histograms to crossfilter.
+          </span>
+        </h2>
+        </div>
+        <div id="row">
+            <div id="map" class="display">
+            </div>
+        </div>
+        <div class='row'>
+            <div class='span6' id='dc-magnitude-chart'>
+                <h4>
+        		Number of Events by Magnitude
+                <span>
+                  <a class="reset"
+                    href="javascript:magnitudeChart.filterAll();dc.redrawAll();"
+                    style="display: none;">
+                    reset
+                  </a>
+                </span>
+        	  </h4>
+            </div>
+            <div class='span6' id='dc-depth-chart'>
+                <h4>
+      		Events by Depth (km)
+              <span>
+                <a class="reset"
+                  href="javascript:depthChart.filterAll();dc.redrawAll();"
+                  style="display: none;">
+                  reset
+                </a>
+              </span>
+            </h4>
+            </div>
+        </div>
+        <div class="row">
+            <div id="yearly-bubble-chart" class="span12 dc-chart">
+                <strong>Yearly View</strong> (radius: Injured, color: Damage)
+                <a class="reset" href="javascript:yearlyBubbleChart.filterAll();dc.redrawAll();" style="display: none;">reset</a>
+
+                <div class="clearfix"></div>
+            </div>
+        </div>
+        <div class='row'>
+            <div class='span4' id='dc-monthview-chart'>
+                <h4>
+            Month View
+            <span>
+              <a class="reset"
+                href="javascript:monthViewChart.filterAll();dc.redrawAll();"
+                style="display: none;">
+                reset
+              </a>
+            </span>
+          </h4>
+                <div class="clearfix"></div>
+            </div>
+            <div class='span3' id='blank1'>
+                <h4> </h4>
+            </div>
+            <div class='span3' id='blank2'>
+                <h4> </h4>
+            </div>
+        </div>
+
+        <div class='row'>
+            <div class='span12'>
+                <table class='table table-hover' id='dc-table-graph'>
+                    <thead>
+                        <tr class='header'>
+                            <th>Year</th>
+                            <th>Month</th>
+                            <th>Country</th>
+                            <th>Place</th>
+                            <th>Region</th>
+                            <th>Lat</th>
+                            <th>Long</th>
+                            <th>Depth</th>
+                            <th>Magnitude</th>
+                            <th>Deaths</th>
+                            <th>Injured</th>
+                            <th>Missing</th>
+                            <th>Damage</th>
+                            <th>Google Map</th>
+                            <th>OSM Map</th>
+                        </tr>
+                    </thead>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        // Create a map of the earth
+        var width = 1000,
+            height = 500;
+
+        var proj = d3.geo.mercator()
+            .center([0, 0])
+            .scale(180)
+            .rotate([-10, 0]);
+
+        var path = d3.geo.path()
+            .projection(proj);
+
+        var zoom = d3.behavior.zoom()
+            .translate(proj.translate())
+            .scale(proj.scale())
+            .scaleExtent([height * .33, 4 * height])
+            .on("zoom", zoom);
+
+
+        var svg = d3.select("#map").append("svg")
+            .attr("width", width)
+            .attr("height", height)
+            .call(zoom);
+
+        function zoom() {
+            proj.translate(d3.event.translate).scale(d3.event.scale);
+            svg.selectAll("path").attr("d", path);
+            circles
+                .attr("cx", function(d) {
+                    return proj([d.long, d.lat])[0];
+                })
+                .attr("cy", function(d) {
+                    return proj([d.long, d.lat])[1];
+                });
+        }
+
+        var borders = svg.append("g");
+
+        var impacts = svg.append("g");
+
+        var quakeScale = d3.scale.pow().exponent(.5).domain([0, 1000, 10000, 56000, 23000000]);
+
+        var colorScale = d3.scale.linear().domain([1400, 1800, 1860, 1940, 2015]);
+
+        var tooltip = d3.select("body").append("div")
+            .attr("class", "tooltip")
+            .style("opacity", 1e-6)
+            .style("background", "rgba(250,250,250,.7)");
+
+        queue()
+            .defer(d3.json, "worldTopo.json")
+            .defer(d3.csv, "quakes.csv")
+            .await(ready);
+
+        var quakes;
+
+        function ready(error, topology) {
+            borders.selectAll("path")
+                .data(topojson.object(topology, topology.objects.countries)
+                    .geometries)
+                .enter()
+                .append("path")
+                .attr("d", path)
+                .attr("class", "border")
+        };
+
+        quakeScale
+            .range([4, 5, 6, 7, 8]);
+
+        colorScale
+            .range(["#FFFF66", "#FFFF00", "#E68000", "#D94000", "#CC0000"]);
+
+
+
+        // Create the dc.js chart objects & link to div
+        var dataTable = dc.dataTable("#dc-table-graph");
+        var magnitudeChart = dc.barChart("#dc-magnitude-chart");
+        var depthChart = dc.barChart("#dc-depth-chart");
+        var monthViewChart = dc.rowChart("#dc-monthview-chart");
+        var yearlyBubbleChart = dc.bubbleChart('#yearly-bubble-chart');
+
+        // load data from a csv file
+        d3.csv("bigquakes.csv", function(data) {
+
+            // format our data
+            var dtgFormat = d3.time.format("%Y-%m-%dT%H:%M:%S");
+            var dtgFormat2 = d3.time.format("%a %e %b %H:%M");
+            var numberFormat = d3.format(',.2f');
+
+            data.forEach(function(d) {
+                d.id = d.I_D;
+                d.year = d.YEAR;
+                d.month = d.MONTH;
+                d.country = d.COUNTRY;
+                d.place = d.LOCATION_NAME;
+                d.lat = +d.LATITUDE;
+                d.long = +d.LONGITUDE;
+                d.mag = d3.round(+d.EQ_PRIMARY, 1);
+                d.depth = d3.round(+d.FOCAL_DEPTH, 0);
+                d.deaths = d3.round(+d.TOTAL_DEATHS, 0);
+                d.injured = d3.round(+d.TOTAL_INJURIES, 0);
+                d.missing = d3.round(+d.TOTAL_MISSING, 0);
+                d.damage = d3.round(+d.TOTAL_DAMAGE_MILLIONS_DOLLARS, 2);
+                d.region = d.REGION_CODE;
+            });
+
+            // Run the data through crossfilter and load our 'facts'
+            var facts = crossfilter(data);
+            var all = facts.groupAll();
+
+            // Map circles
+            circles = impacts.selectAll("circle")
+                .data(data).enter()
+                .append("svg:a")
+                .attr("xlink:href", function(d) {
+                    return 'http://maps.google.com/maps?z=12&t=m&q=loc:' + d.lat + '+' + d.long;
+                })
+                .attr("xlink:show", "new")
+                .append("circle")
+                .attr("cx", function(d) {
+                    return proj([d.long, d.lat])[0];
+                })
+                .attr("cy", function(d) {
+                    return proj([d.long, d.lat])[1];
+                })
+                .attr("r", function(d) {
+                    return quakeScale(d.mag);
+                })
+                .attr("id", function(d) {
+                    return "id" + d.id;
+                })
+                .style("fill", function(d) {
+                    return colorScale(d.year);
+                })
+                .on("mouseover", function(d) {
+                    d3.select(this)
+                        .attr("stroke", "black")
+                        .attr("stroke-width", 1)
+                        .attr("fill-opacity", 1);
+
+                    tooltip
+                        .style("left", (d3.event.pageX + 5) + "px")
+                        .style("top", (d3.event.pageY - 5) + "px")
+                        .transition().duration(300)
+                        .style("opacity", 1)
+                        .style("display", "block")
+
+                    updateDetails(d);
+                })
+                .on("mouseout", function(d) {
+                    d3.select(this)
+                        .attr("stroke", "")
+                        .attr("fill-opacity", function(d) {
+                            return 1;
+                        })
+
+                    tooltip.transition().duration(700).style("opacity", 0);
+                });
+
+            var printDetails = [{
+                'var': 'year',
+                'print': 'Year'
+            }, {
+                'var': 'mag',
+                'print': 'Magnitude'
+            }, {
+                'var': 'place',
+                'print': 'Place'
+            }, {
+                'var': 'deaths',
+                'print': 'Deaths'
+            }];
+
+            function updateDetails(quake) {
+                tooltip.selectAll("div").remove();
+                tooltip.selectAll("div").data(printDetails).enter()
+                    .append("div")
+                    .append('span')
+                    .text(function(d) {
+                        return d.print + ": ";
+                    })
+                    .attr("class", "boldDetail")
+                    .insert('span')
+                    .text(function(d) {
+                        return quake[d.var];
+                    })
+                    .attr("class", "normalDetail");
+            }
+
+            lastFilterArray = [];
+            data.forEach(function(d, i) {
+                lastFilterArray[i] = 1;
+            });
+
+            var cartoDbId = facts.dimension(function(d) {
+                return d.id;
+            });
+            var cartoDbIds = cartoDbId.group()
+
+            //yearlyBubbleChart
+            // Dimension by year
+            var yearlyDimension = facts.dimension(function(d) {
+                return d.year;
+            });
+            // Maintain running tallies by year as filters are applied or removed
+            var yearlyGroup = yearlyDimension.group().reduce(
+                /* callback for when data is added to the current filter results */
+                function(p, v) {
+                    ++p.count;
+                    p.deaths += v.deaths;
+                    p.injured += v.injured;
+                    p.missing += v.missing;
+                    p.sumMag += v.mag;
+                    p.avgMag = p.sumMag / p.count;
+                    p.damage += v.damage;
+                    return p;
+                },
+                /* callback for when data is removed from the current filter results */
+                function(p, v) {
+                    --p.count;
+                    p.deaths -= v.deaths;
+                    p.injured -= v.injured;
+                    p.missing -= v.missing;
+                    p.sumMag -= v.mag;
+                    p.avgMag = p.count ? p.sumMag / p.count : 0;
+                    p.damage -= v.damage;
+                    return p;
+                },
+                /* initialize p */
+                function() {
+                    return {
+                        count: 0,
+                        deaths: 0,
+                        injured: 0,
+                        missing: 0,
+                        sumMag: 0,
+                        avgMag: 0,
+                        damage: 0
+                    };
+                }
+            );
+            // Dimension by region
+            var regionDimension = facts.dimension(function(d) {
+                return d.region;
+            });
+            // Maintain running tallies by year as filters are applied or removed
+            var regionGroup = regionDimension.group().reduce(
+                /* callback for when data is added to the current filter results */
+                function(p, v) {
+                    ++p.count;
+                    p.deaths += v.deaths;
+                    p.injured += v.injured;
+                    p.missing += v.missing;
+                    p.sumMag += v.mag;
+                    p.avgMag = p.sumMag / p.count;
+                    p.damage += v.damage;
+                    return p;
+                },
+                /* callback for when data is removed from the current filter results */
+                function(p, v) {
+                    --p.count;
+                    p.deaths -= v.deaths;
+                    p.injured -= v.injured;
+                    p.missing -= v.missing;
+                    p.sumMag -= v.mag;
+                    p.avgMag = p.count ? p.sumMag / p.count : 0;
+                    p.damage -= v.damage;
+                    return p;
+                },
+                /* initialize p */
+                function() {
+                    return {
+                        count: 0,
+                        deaths: 0,
+                        injured: 0,
+                        missing: 0,
+                        sumMag: 0,
+                        avgMag: 0,
+                        damage: 0
+                    };
+                }
+            );
+            // for Magnitude
+            var magValue = facts.dimension(function(d) {
+                return d.mag; // add the magnitude dimension
+            });
+            var magValueGroupSum = magValue.group()
+                .reduceSum(function(d) {
+                    return d.mag;
+                }); // sums
+            var magValueGroupCount = magValue.group()
+                .reduceCount(function(d) {
+                    return d.mag;
+                }) // counts
+            var filtered_magValueGroupCountgroup = remove_empty_bins(magValueGroupCount);
+            // for Depth
+            var depthValue = facts.dimension(function(d) {
+                return d.depth;
+            });
+            var depthValueGroup = depthValue.group();
+            var filtered_depthValueGroup = remove_empty_bins(depthValueGroup);
+
+            // time chart
+            var volumeByYear = facts.dimension(function(d) {
+                return d.year;
+            });
+            var volumeByYearGroup = volumeByYear.group()
+                .reduceCount(function(d) {
+                    return d.year;
+                });
+
+            // row chart Month
+            var monthView = facts.dimension(function(d) {
+                var monthly = d.month;
+                switch (monthly) {
+                    //case " ":
+                    //    return "0.Unknown";
+                    //case "0":
+                    //    return "0.Unknown";
+                    case "1":
+                        return "A.Jan";
+                    case "2":
+                        return "B.Feb";
+                    case "3":
+                        return "C.Mar";
+                    case "4":
+                        return "D.Apr";
+                    case "5":
+                        return "E.May";
+                    case "6":
+                        return "F.June";
+                    case "7":
+                        return "G.July";
+                    case "8":
+                        return "H.Aug";
+                    case "9":
+                        return "I.Sept";
+                    case "10":
+                        return "J.Oct";
+                    case "11":
+                        return "K.Nov";
+                    case "12":
+                        return "L.Dec";
+                    default:
+                        return "M.Unknown";
+                }
+            });
+            var monthViewGroup = monthView.group();
+            var filtered_monthViewGroup = remove_empty_bins_top(monthViewGroup);
+
+            // Create datatable dimension
+            var timeDimension = facts.dimension(function(d) {
+                return d.year;
+            });
+
+            function remove_empty_bins(source_group) {
+                return {
+                    all: function() {
+                        return source_group.all().filter(function(d) {
+                            return d.value != 0;
+                        });
+                    }
+                };
+            }
+
+            function remove_empty_bins2(source_group) {
+                return {
+                    all: function() {
+                        return source_group.all().filter(function(d) {
+                            return d.value != "0.Unknown";
+                        });
+                    }
+                };
+            }
+
+            function remove_empty_bins_top(source_group) {
+                function non_zero_pred(d) {
+                    return d.value != "0.Unknown";
+                }
+                return {
+                    all: function() {
+                        return source_group.all().filter(non_zero_pred);
+                    },
+                    top: function(n) {
+                        return source_group.top(Infinity)
+                            .filter(non_zero_pred)
+                            .slice(0, n);
+                    }
+                };
+            }
+
+            function sort_group(group, order) {
+                return {
+                    all: function() {
+                        var g = group.all(),
+                            map = {};
+
+                        g.forEach(function(kv) {
+                            map[kv.key] = kv.value;
+                        });
+                        return order.map(function(k) {
+                            return {
+                                key: k,
+                                value: map[k]
+                            };
+                        });
+                    }
+                };
+            };
+            // Setup the charts
+
+            // count all the facts
+            dc.dataCount(".dc-data-count")
+                .dimension(facts)
+                .group(all);
+
+            //### Define Chart Attributes
+            // Define chart attributes using fluent methods. See the
+            // [dc.js API Reference](https://github.com/dc-js/dc.js/blob/master/web/docs/api-latest.md) for more information
+            //
+            //#### Bubble Chart
+
+            //Create a bubble chart and use the given css selector as anchor. You can also specify
+            //an optional chart group for this chart to be scoped within. When a chart belongs
+            //to a specific group then any interaction with the chart will only trigger redraws
+            //on charts within the same chart group.
+            // <br>API: [Bubble Chart](https://github.com/dc-js/dc.js/blob/master/web/docs/api-latest.md#bubble-chart)
+
+            yearlyBubbleChart /* dc.bubbleChart('#yearly-bubble-chart', 'chartGroup') */
+            // (_optional_) define chart width, `default = 200`
+                .width(990)
+                // (_optional_) define chart height, `default = 200`
+                .height(250)
+                // (_optional_) define chart transition duration, `default = 750`
+                .transitionDuration(1500)
+                .margins({
+                    top: 10,
+                    right: 50,
+                    bottom: 30,
+                    left: 40
+                })
+                .dimension(yearlyDimension)
+                //The bubble chart expects the groups are reduced to multiple values which are used
+                //to generate x, y, and radius for each key (bubble) in the group
+                .group(yearlyGroup)
+                // (_optional_) define color function or array for bubbles: [ColorBrewer](http://colorbrewer2.org/)
+                .colors(colorbrewer.RdYlGn[9])
+                //(optional) define color domain to match your data domain if you want to bind data or color
+                .colorDomain([-500, 500])
+                //##### Accessors
+
+            //Accessor functions are applied to each value returned by the grouping
+
+            // `.colorAccessor` - the returned value will be passed to the `.colors()` scale to determine a fill color
+            .colorAccessor(function(p) {
+                    return p.value.damage;
+                })
+                // `.keyAccessor` - the `X` value will be passed to the `.x()` scale to determine pixel location
+                .keyAccessor(function(p) {
+                    return p.value.deaths;
+                })
+                // `.valueAccessor` - the `Y` value will be passed to the `.y()` scale to determine pixel location
+                .valueAccessor(function(p) {
+                    return p.value.avgMag;
+                })
+                // `.radiusValueAccessor` - the value will be passed to the `.r()` scale to determine radius size;
+                //   by default this maps linearly to [0,100]
+                .radiusValueAccessor(function(p) {
+                    return p.value.injured;
+                })
+                .maxBubbleRelativeSize(0.1)
+                .x(d3.scale.sqrt().domain([0, 850000]).range([0, 10]).clamp(true))
+                .y(d3.scale.linear().domain([1, 9]).range([0, 10]))
+                .r(d3.scale.sqrt().domain([1, 2500000]).range([1, 10]).clamp(true))
+                //##### Elastic Scaling
+
+            //`.elasticY` and `.elasticX` determine whether the chart should rescale each axis to fit the data.
+            .elasticY(true)
+                .elasticX(true)
+                //`.yAxisPadding` and `.xAxisPadding` add padding to data above and below their max values in the same unit
+                //domains as the Accessors.
+                .yAxisPadding(1)
+                .xAxisPadding(100)
+                // (_optional_) render horizontal grid lines, `default=false`
+                .renderHorizontalGridLines(true)
+                // (_optional_) render vertical grid lines, `default=false`
+                .renderVerticalGridLines(true)
+                // (_optional_) render an axis label below the x axis
+                .xAxisLabel('Deaths')
+                // (_optional_) render a vertical axis lable left of the y axis
+                .yAxisLabel('Avg Magnitude')
+                //##### Labels and  Titles
+
+            //Labels are displayed on the chart for each bubble. Titles displayed on mouseover.
+            // (_optional_) whether chart should render labels, `default = true`
+            .renderLabel(true)
+                .label(function(p) {
+                    return p.key;
+                })
+                // (_optional_) whether chart should render titles, `default = false`
+                .renderTitle(true)
+                .title(function(p) {
+                    return [
+                        p.key,
+                        'Avg Mag: ' + numberFormat(p.value.avgMag),
+                        'Deaths: ' + numberFormat(p.value.deaths),
+                        'Injured: ' + numberFormat(p.value.injured),
+                        'missing: ' + numberFormat(p.value.missing),
+                        'Damage: ' + numberFormat(p.value.damage)
+                    ].join('\n');
+                })
+                //#### Customize Axes
+
+            // Set a custom tick format. Both `.yAxis()` and `.xAxis()` return an axis object,
+            // so any additional method chaining applies to the axis, not the chart.
+            .yAxis().tickFormat(function(v) {
+                return v;
+            });
+            yearlyBubbleChart.on("filtered", function (chart, filter) {
+                // update function for d3
+                renderAll();
+            });
+            // Magnitude Bar Graph Counted
+            magnitudeChart.width(480)
+                .height(150)
+                .margins({
+                    top: 10,
+                    right: 10,
+                    bottom: 20,
+                    left: 40
+                })
+                .dimension(magValue)
+                .group(magValueGroupCount)
+                .transitionDuration(500)
+                .centerBar(true)
+                .gap(100) // 65 = norm
+                //    .filter([3, 5])
+                .x(d3.scale.linear().domain([4.0, 9.0]))
+                .elasticY(true)
+                .xAxis().tickFormat();
+
+                magnitudeChart.on("filtered", function (chart, filter) {
+                    // update function for d3
+                    renderAll();
+                });
+            // Depth bar graph
+            depthChart.width(480)
+                .height(150)
+                .margins({
+                    top: 10,
+                    right: 10,
+                    bottom: 20,
+                    left: 40
+                })
+                .dimension(depthValue)
+                .group(depthValueGroup)
+                //.group(filtered_depthValueGroup)
+                .transitionDuration(500)
+                .centerBar(true)
+                .gap(1)
+                .x(d3.scale.linear().domain([1, 100]))
+                .elasticY(true)
+                .xAxis().tickFormat(function(v) {
+                    return v;
+                });
+                depthChart.on("filtered", function (chart, filter) {
+                    // update function for d3
+                    renderAll();
+                });
+            // row chart day of week
+            monthViewChart.width(500)
+                .height(300)
+                .margins({
+                    top: 5,
+                    left: 10,
+                    right: 10,
+                    bottom: 20
+                })
+                .dimension(monthView)
+                .ordering(function(d) {
+                    //console.log(d.key.split(".")[0]);
+                    return d.key.split(".")[0];
+                })
+                //.group(monthViewGroup)
+                .group(filtered_monthViewGroup)
+                .colors(d3.scale.category20())
+                .label(function(d) {
+                    return d.key.split(".")[1];
+                })
+                .title(function(d) {
+                    return d.value;
+                })
+                .elasticX(true)
+                .xAxis().ticks(4);
+                monthViewChart.on("filtered", function (chart, filter) {
+                    // update function for d3
+                    renderAll();
+                });
+
+            // Table of earthquake data
+            dataTable.width(960).height(800)
+                .dimension(timeDimension)
+                .group(function(d) {
+                    return "Earthquake Table"
+                })
+                .size(50)
+                .columns([
+                    function(d) {
+                        return d.year;
+                    },
+                    function(d) {
+                        return d.month;
+                    },
+                    function(d) {
+                        return d.country;
+                    },
+                    function(d) {
+                        return d.place;
+                    },
+                    function(d) {
+                        return d.region;
+                    },
+                    function(d) {
+                        return d.lat;
+                    },
+                    function(d) {
+                        return d.long;
+                    },
+                    function(d) {
+                        return d.depth;
+                    },
+                    function(d) {
+                        return d.mag;
+                    },
+                    function(d) {
+                        return d.deaths;
+                    },
+                    function(d) {
+                        return d.injured;
+                    },
+                    function(d) {
+                        return d.missing;
+                    },
+                    function(d) {
+                        return d.damaged;
+                    },
+                    function(d) {
+                        return '<a href=\"http://maps.google.com/maps?z=12&t=m&q=loc:' + d.lat + '+' + d.long + "\" target=\"_blank\">Google Map</a>"
+                    },
+                    function(d) {
+                        return '<a href=\"http://www.openstreetmap.org/?mlat=' + d.lat + '&mlon=' + d.long + '&zoom=12' + "\" target=\"_blank\"> OSM Map</a>"
+                    }
+                ])
+                .sortBy(function(d) {
+                    return d.year;
+                })
+                .order(d3.ascending);
+
+            function renderAll() {
+
+                var filterArray = cartoDbIds.all();
+                filterArray.forEach(function(d, i) {
+                    if (d.value != lastFilterArray[i]) {
+                        lastFilterArray[i] = d.value;
+                        d3.select("#id" + d.key).transition().duration(500)
+                            .attr("r", d.value == 1 ? 2 * quakeScale(data[i].mag) : 0)
+                            .transition().delay(550).duration(500)
+                            .attr("r", d.value == 1 ? quakeScale(data[i].mag) : 0);
+
+                    }
+                })
+
+                d3.select("#active").text(all.value());
+            }
+
+            window.reset = function(i) {
+                //charts[i].filter(null);
+                renderAll();
+            }
+            // Render the Charts
+            dc.renderAll();
+            //Re-render the circles based on what is showing
+            renderAll();
+        });
+    </script>
+
+</body>
+
+</html>
