@@ -12,4 +12,8 @@ An example data scope using dc.js
 
 [Read the development blog post](http://www.sonicviz.com/wp/2016/10/28/earthquake-data-scope/)
 
-The code for this recipe is licensed under the [MIT License](http://opensource.org/licenses/MIT).
+Based on the following examples:
+[500 Years of Witnessed Meteors](http://roadtolarissa.com/meteors/)
+[Earthquake Data Discovery using dc.js, crossfilter, d3.js and bootstrap](http://bl.ocks.org/d3noob/6077996)
+
+The code for this example is licensed under the [MIT License](http://opensource.org/licenses/MIT).
