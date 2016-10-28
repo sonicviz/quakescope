@@ -14,7 +14,7 @@ An example data scope using dc.js
 
 Based on the following examples:
 
--[500 Years of Witnessed Meteors](http://roadtolarissa.com/meteors/)
--[Earthquake Data Discovery using dc.js, crossfilter, d3.js and bootstrap](http://bl.ocks.org/d3noob/6077996)
+- [500 Years of Witnessed Meteors](http://roadtolarissa.com/meteors/)
+- [Earthquake Data Discovery using dc.js, crossfilter, d3.js and bootstrap](http://bl.ocks.org/d3noob/6077996)
 
 The code for this example is licensed under the [MIT License](http://opensource.org/licenses/MIT).
