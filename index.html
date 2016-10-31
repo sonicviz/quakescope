@@ -225,7 +225,6 @@
 
         queue()
             .defer(d3.json, "worldTopo.json")
-            .defer(d3.csv, "quakes.csv")
             .await(ready);
 
         var quakes;
